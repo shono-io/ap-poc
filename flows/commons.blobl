@@ -1,0 +1,22 @@
+map map_debezium_operation {
+  root = match this.op {
+    "c" => "created"
+    "d" => "deleted"
+    "u" => "updated"
+    "r" => "updated"
+    _ => "unknown"
+  }
+}
+
+map map_debezium_key {
+  root = match {
+    this.op == "d" => this.before.id
+    _ => this.after.id
+  }
+}
+
+map map_debezium_entity {
+  root = match this.source.table {
+    "lecturers" => "lecturer"
+  }
+}

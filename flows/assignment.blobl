@@ -1,0 +1,38 @@
+map map_assignment {
+  root = match {
+    this.op == "c" => this.apply("map_assignment_create")
+    this.op == "d" => this.apply("map_assignment_delete")
+    this.op == "u" || this.op == "r" => this.apply("map_assignment_change")
+    _ => this.op
+  }
+}
+
+map map_assignment_create {
+  root.entity = "assignment"
+  root.event = "created"
+  root.key = this.after.id
+  root.timestamp = this.ts_ms
+  root.data = this.after
+}
+
+map map_assignment_delete {
+  root.entity = "assignment"
+  root.event = "deleted"
+  root.key = this.before.id
+  root.timestamp = this.ts_ms
+}
+
+map map_assignment_change {
+  root.entity = "assignment"
+  root.key = this.after.id
+  root.timestamp = this.ts_ms
+  root.data = this.after
+
+  # our event depends on the actual changes that were applied
+  let changes = this.before.diff(this.after).format_json().parse_json().filter(i -> i.Path != ["created_at"])
+  root.event = match {
+    $changes == null => "duplicate"
+    $changes.length() == 1 && $changes.index(0).Path == ["lecturer_id"] => "assigned"
+    _ => "updated"
+  }
+}

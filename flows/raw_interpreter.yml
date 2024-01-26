@@ -1,0 +1,46 @@
+input:
+  nats_jetstream:
+    urls:
+      - ${NATS_URL}
+    subject: raw.>
+    stream: DebeziumStream
+
+  processors:
+    # Debezium will send several different types of events, we only want to process the ones that act on specific
+    # records.
+    - mapping: |-
+        root = if ! this.exists("payload.op") { deleted() } else { this.payload }
+
+    # we can use the source.table name to determine which table the event is for.
+    - switch:
+        - check: this.source.table == "lecturers"
+          processors:
+            - mapping: |-
+                import "./flows/commons.blobl"
+                
+                root.timestamp  = this.ts_ms
+                root.data       = this.after
+                root.key        = this.apply("map_debezium_key")
+                root.event      = this.apply("map_debezium_operation")
+                root.entity     = this.apply("map_debezium_entity")
+
+        - check: this.source.table == "assignments"
+          processors:
+            - mapping: |-
+                import "./flows/assignment.blobl"
+                root = this.apply("map_assignment")
+
+        # if the table name is not one we care about, we can delete the message.
+        - processors:
+            - mapping: root = deleted()
+
+output:
+  nats_jetstream:
+    urls:
+      - ${NATS_URL}
+    subject: "ap.${!this.entity}.${!this.key}"
+    headers:
+      ap_event: "${!this.event}"
+      ap_entity: "${!this.entity}"
+      ap_key: "${!this.key}"
+      ap_ts: "${!this.timestamp}"

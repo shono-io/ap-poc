@@ -1,0 +1,47 @@
+version: '3.9'
+volumes:
+  debezium_data:
+  sqlserver_data:
+  nats_data:
+
+services:
+  nats:
+#    image: nats:2.10.5
+    image: nats:latest
+    ports:
+      - "4222:4222"
+    volumes:
+      - nats_data:/nats/data
+    command:
+      - "--debug"
+      - "--http_port=8222"
+      - "--js"
+      - "--sd=/nats/data"
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    ports:
+      - "1433:1433"
+    command: ["/cmd_wrapper.sh"]
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./conf/sqlserver/cmd_wrapper.sh:/cmd_wrapper.sh
+      - ./conf/sqlserver/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d/
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_PID=Standard
+      - MSSQL_SA_PASSWORD=Password!
+      - MSSQL_AGENT_ENABLED=true
+
+  debezium:
+#    image: debezium/server:2.4.0.Final
+    image: debezium/server:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - sqlserver
+      - nats
+    restart: always
+    volumes:
+      - debezium_data:/debezium/data
+      - ./conf/debezium:/debezium/conf
