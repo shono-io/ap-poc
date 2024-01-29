@@ -24,23 +24,62 @@ input:
                 root.event      = this.apply("map_debezium_operation")
                 root.entity     = this.apply("map_debezium_entity")
 
+            - log:
+                message: "Lecturer: ${!this}"
+
+            - branch:
+                request_map: |-
+                  root = this.data.without("created_at", "id")
+                  root.key = this.key
+                processors:
+                  - nats_kv:
+                      urls:
+                        - ${NATS_URL}
+                      bucket: LOOKUP_LECTURERS
+                      key: "${!this.key}"
+                      operation: "put"
+
         - check: this.source.table == "assignments"
           processors:
             - mapping: |-
                 import "./flows/assignment.blobl"
                 root = this.apply("map_assignment")
 
+            - branch:
+                request_map: |-
+                  root = if this.data.lecturer_id.or("") == "" { deleted() } else { this }
+                processors:
+                  - log:
+                      message: "Looking for lecturer: ${!this.data.lecturer_id}"
+                  - nats_kv:
+                      urls:
+                        - ${NATS_URL}
+                      bucket: LOOKUP_LECTURERS
+                      key: "${!this.data.lecturer_id}"
+                      operation: "get"
+                result_map: |-
+                  root.lecturer = this
+
         # if the table name is not one we care about, we can delete the message.
         - processors:
             - mapping: root = deleted()
 
 output:
-  nats_jetstream:
-    urls:
-      - ${NATS_URL}
-    subject: "ap.${!this.entity}.${!this.key}"
-    headers:
-      ap_event: "${!this.event}"
-      ap_entity: "${!this.entity}"
-      ap_key: "${!this.key}"
-      ap_ts: "${!this.timestamp}"
+  switch:
+    cases:
+      - check: errored()
+        output:
+          nats_jetstream:
+            urls:
+              - ${NATS_URL}
+            subject: "dlq"
+      - output:
+          nats_jetstream:
+            urls:
+              - ${NATS_URL}
+            subject: "ap.${!this.entity}.${!this.key}"
+            headers:
+              ap_event: "${!this.event}"
+              ap_entity: "${!this.entity}"
+              ap_key: "${!this.key}"
+              ap_ts: "${!this.timestamp}"

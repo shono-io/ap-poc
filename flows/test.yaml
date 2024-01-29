@@ -1,0 +1,16 @@
+input:
+  nats_jetstream:
+    urls:
+      - ${NATS_URL}
+    subject: "raw.ap.>"
+    stream: DebeziumStream
+
+  processors:
+    - mapping: |-
+        root.table = this.payload.source.table
+        root.op = this.payload.op
+        root.before = this.payload.before
+        root.after = this.payload.after
+
+output:
+  stdout: {}
